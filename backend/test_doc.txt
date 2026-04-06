@@ -1,0 +1,7 @@
+This is a test document for the PALN ingestion pipeline.
+
+It contains multiple paragraphs of text that should be chunked and embedded into the vector database.
+
+The document parser should be able to handle PDF, TXT, and DOCX files.
+
+This is the end of the test document.
