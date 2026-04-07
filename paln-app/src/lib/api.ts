@@ -106,6 +106,22 @@ export interface ChatResponse {
   follow_ups: string[];
 }
 
+export interface SummarizeRequest {
+  source_ids: string[];
+  query?: string;
+  mode?: "short" | "medium" | "detailed";
+  focus?: "all" | "text_only" | "visual_only" | "audio_only";
+  format?: "bullets" | "narrative" | "hybrid";
+}
+
+export interface SummarizeData {
+  summary: string;
+  bullets: string[];
+  source_anchors: any[];
+  modality_breakdown: any;
+  modality_tags: string[];
+}
+
 export const api = {
   auth: {
     register: async (email: string, password: string): Promise<ApiResponse<AuthResponse>> => {
@@ -174,6 +190,15 @@ export const api = {
     },
   },
 
+  summarize: {
+    generate: async (payload: SummarizeRequest, token: string): Promise<ApiResponse<SummarizeData>> => {
+      return fetchApi<SummarizeData>("/api/summarize", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }, token);
+    }
+  },
+
   chat: {
     createSession: async (title?: string, sourceIds?: string[], token?: string): Promise<ApiResponse<Session>> => {
       return fetchApi<Session>("/api/chat/sessions", {
@@ -196,17 +221,21 @@ export const api = {
       token: string,
       sourceIds?: string[]
     ): Promise<ApiResponse<ChatResponse>> => {
+      const payload = { message, source_ids: sourceIds };
+      console.log("[API] sendMessage payload:", JSON.stringify(payload));
+      
       const response = await fetch(`${API_BASE_URL}/api/chat/sessions/${sessionId}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
         },
-        body: JSON.stringify({ message, source_ids: sourceIds }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        console.error("[API] sendMessage error:", errorData);
         return { error: errorData.detail || "Failed to send message" };
       }
 
@@ -265,7 +294,7 @@ export const api = {
                 const data = JSON.parse(line.slice(6));
                 yield data;
                 if (data.done) return;
-              } catch (e) {
+              } catch {
                 // Skip malformed SSE data
               }
             }

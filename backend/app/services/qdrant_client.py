@@ -99,45 +99,6 @@ class QdrantDB:
             points=points,
         )
 
-    async def search(
-        self,
-        query_embedding: list[float],
-        limit: int = 5,
-        source_id: Optional[str] = None,
-    ) -> list[dict]:
-        """Search for similar chunks."""
-        client = await self.get_client()
-        
-        filter_condition = None
-        if source_id:
-            from qdrant_client.models import Filter, FieldCondition, MatchValue
-            filter_condition = Filter(
-                must=[FieldCondition(key="source_id", match=MatchValue(value=source_id))]
-            )
-        
-        results = await client.query_points(
-            collection_name=self.COLLECTION_NAME,
-            query=query_embedding,
-            limit=limit,
-            query_filter=filter_condition,
-        )
-        
-        return [
-            {
-                "id": result.id,
-                "score": result.score,
-                "source_id": result.payload["source_id"],
-                "chunk_text": result.payload["chunk_text"],
-                "chunk_index": result.payload["chunk_index"],
-                "page_number": result.payload.get("page_number"),
-                "modality": result.payload.get("modality", "text"),
-                "segment_type": result.payload.get("segment_type", "paragraph"),
-                "confidence": result.payload.get("confidence", 1.0),
-                "source_anchor": result.payload.get("source_anchor", {}),
-            }
-            for result in results.points
-        ]
-
     async def search_by_modality(
         self,
         query_embedding: list[float],

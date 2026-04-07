@@ -1,5 +1,6 @@
 """Upload handler - coordinates the full upload processing pipeline."""
 
+import asyncio
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -8,9 +9,11 @@ import httpx
 from bs4 import BeautifulSoup
 from fastapi import HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.db.sqlite import get_db
+from app.db.database import async_session_factory
+from app.db.models import Source
 from app.services.document_parser import DocumentParser, get_media_type
 from app.services.qdrant_client import qdrant_db
 
@@ -54,10 +57,43 @@ class UploadHandler:
             5. Store in vector DB
             6. Save metadata to SQLite
         """
+        return await self.process_file_async(
+            file_content=file_content,
+            filename=filename,
+            user_id=user_id,
+            progress_callback=None,
+        )
+
+    async def process_file_async(
+        self,
+        file_content: bytes,
+        filename: str,
+        user_id: str,
+        progress_callback: Optional[callable] = None,
+    ) -> SourceResponse:
+        """Process file upload with progress updates.
+        
+        Pipeline:
+            1. Parse document (PDF, TXT, DOCX, etc.) - runs in thread pool
+            2. For images: Generate vision description using LLaVA
+            3. Clean each page's text
+            4. Chunk pages
+            5. Embed chunks (hybrid for images: OCR + vision)
+            6. Store in vector DB
+            7. Save metadata to SQLite
+        """
         settings = get_settings()
         media_type = get_media_type(filename)
         
-        pages = DocumentParser.parse(file_content, filename, settings.whisper_model)
+        if progress_callback:
+            await progress_callback(5)
+        
+        pages = await asyncio.to_thread(
+            DocumentParser.parse, file_content, filename, settings.whisper_model
+        )
+        
+        if progress_callback:
+            await progress_callback(25)
         
         if not pages:
             raise HTTPException(
@@ -65,7 +101,85 @@ class UploadHandler:
                 detail="No text content found in document",
             )
         
+        vision_description = None
+        
+        if media_type == "image" and file_content:
+            try:
+                if progress_callback:
+                    await asyncio.create_task(self._update_progress(progress_callback, 30))
+                
+                embeddings, vision_desc = await self.embedder.embed_image_hybrid(
+                    file_content,
+                    pages[0].get("text", ""),
+                )
+                vision_description = vision_desc
+                
+                if progress_callback:
+                    await asyncio.create_task(self._update_progress(progress_callback, 55))
+                
+                if embeddings:
+                    aware_chunker = ModalityAwareChunker()
+                    
+                    vision_chunk = {
+                        "text": vision_description,
+                        "page": 1,
+                        "modality": "image",
+                        "segment_type": "vision_description",
+                        "confidence": 1.0,
+                        "chunk_index": 0,
+                        "source_anchor": {
+                            "chunk_index": 0,
+                            "page": 1,
+                            "timestamp_start": None,
+                            "timestamp_end": None,
+                        },
+                    }
+                    
+                    ocr_text = pages[0].get("text", "")
+                    if ocr_text:
+                        ocr_chunk = {
+                            "text": ocr_text,
+                            "page": 1,
+                            "modality": "image",
+                            "segment_type": "ocr_text",
+                            "confidence": pages[0].get("confidence", 1.0),
+                            "chunk_index": 1,
+                            "source_anchor": {
+                                "chunk_index": 1,
+                                "page": 1,
+                                "timestamp_start": None,
+                                "timestamp_end": None,
+                            },
+                        }
+                        chunks = [vision_chunk, ocr_chunk]
+                    else:
+                        chunks = [vision_chunk]
+                    
+                    if progress_callback:
+                        await asyncio.create_task(self._update_progress(progress_callback, 70))
+                    
+                    return await self._store_source(
+                        source_id=str(uuid.uuid4()),
+                        name=filename,
+                        media_type=media_type,
+                        file_content=file_content,
+                        filename=filename,
+                        chunks=chunks,
+                        user_id=user_id,
+                        progress_callback=progress_callback,
+                        vision_description=vision_description,
+                        embeddings_override=embeddings,
+                    )
+            except Exception as e:
+                if "Vision model" in str(e) or "llava" in str(e).lower():
+                    pass
+                else:
+                    raise
+        
         pages = self._clean_pages(pages, media_type)
+        
+        if progress_callback:
+            await progress_callback(40)
         
         aware_chunker = ModalityAwareChunker()
         if media_type in ("audio", "video") and pages and pages[0].get("segments"):
@@ -73,11 +187,17 @@ class UploadHandler:
         else:
             chunks = aware_chunker.chunk_pages_with_metadata(pages, modality=media_type)
         
+        if progress_callback:
+            await progress_callback(55)
+        
         if not chunks:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Failed to chunk document",
             )
+        
+        if progress_callback:
+            await progress_callback(70)
         
         return await self._store_source(
             source_id=str(uuid.uuid4()),
@@ -87,7 +207,12 @@ class UploadHandler:
             filename=filename,
             chunks=chunks,
             user_id=user_id,
+            progress_callback=progress_callback,
         )
+
+    async def _update_progress(self, callback, progress):
+        """Helper to update progress asynchronously."""
+        await callback(progress)
 
     async def process_text(
         self,
@@ -196,6 +321,9 @@ class UploadHandler:
         filename: Optional[str],
         chunks: list[dict],
         user_id: str,
+        progress_callback: Optional[callable] = None,
+        vision_description: Optional[str] = None,
+        embeddings_override: Optional[list[list[float]]] = None,
     ) -> SourceResponse:
         """Store source: embed chunks, save to DB, save file if applicable."""
         settings = get_settings()
@@ -211,51 +339,54 @@ class UploadHandler:
         else:
             file_path_str = None
         
-        db = await get_db()
-        await db.execute(
-            """INSERT INTO sources (id, user_id, name, type, media_type, file_path, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, datetime('now'))""",
-            (source_id, user_id, name, file_ext, media_type, file_path_str),
-        )
-        await db.commit()
-        
-        try:
-            embeddings = await self.embedder.embed_chunks(chunks, media_type)
-            await qdrant_db.add_chunks(source_id, chunks, embeddings)
-            chunk_count = len(chunks)
-        except Exception as e:
-            await db.execute("DELETE FROM sources WHERE id = ?", (source_id,))
-            await db.commit()
-            if file_path_str:
-                try:
-                    Path(file_path_str).unlink(missing_ok=True)
-                except Exception:
-                    pass
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to embed/store chunks: {str(e)}",
+        async with async_session_factory() as db:
+            source = Source(
+                id=source_id,
+                user_id=user_id,
+                name=name,
+                type=file_ext,
+                media_type=media_type,
+                file_path=file_path_str,
+                vision_description=vision_description,
             )
-        
-        await db.execute(
-            "UPDATE sources SET chunk_count = ? WHERE id = ?",
-            (chunk_count, source_id),
-        )
-        await db.commit()
-        
-        row = await db.execute(
-            "SELECT id, name, type, media_type, chunk_count, created_at FROM sources WHERE id = ?",
-            (source_id,),
-        )
-        source = await row.fetchone()
-        
-        return SourceResponse(
-            id=source["id"],
-            name=source["name"],
-            type=source["type"],
-            media_type=source["media_type"],
-            chunk_count=source["chunk_count"],
-            created_at=source["created_at"],
-        )
+            db.add(source)
+            await db.commit()
+            
+            try:
+                if embeddings_override:
+                    embeddings = embeddings_override
+                else:
+                    embeddings = await self.embedder.embed_chunks(chunks, media_type)
+                await qdrant_db.add_chunks(source_id, chunks, embeddings)
+                chunk_count = len(chunks)
+            except Exception as e:
+                await db.delete(source)
+                await db.commit()
+                if file_path_str:
+                    try:
+                        Path(file_path_str).unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to embed/store chunks: {str(e)}",
+                )
+            
+            source.chunk_count = chunk_count
+            await db.commit()
+            await db.refresh(source)
+            
+            if progress_callback:
+                await progress_callback(90)
+            
+            return SourceResponse(
+                id=source.id,
+                name=source.name,
+                type=source.type,
+                media_type=source.media_type,
+                chunk_count=source.chunk_count,
+                created_at=str(source.created_at),
+            )
 
 
 upload_handler = UploadHandler()

@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { Plus, MessageSquare, User, LogOut, Settings, ArrowLeft } from "lucide-react";
+import { Plus, MessageSquare, User, LogOut, Settings, Moon, Sun } from "lucide-react";
 import { SessionCard } from "@/components/SessionCard";
 import { api, Session } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
 export default function ChatsPage() {
   const router = useRouter();
@@ -14,9 +15,10 @@ export default function ChatsPage() {
   const [loading, setLoading] = useState(true);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isDark, setIsDark] = useState(false);
 
   const getToken = (): string | undefined => {
-    return (session?.user as any)?.accessToken || (session as any)?.accessToken;
+    return (session?.user as { accessToken?: string })?.accessToken;
   };
 
   useEffect(() => {
@@ -38,7 +40,7 @@ export default function ChatsPage() {
       } else if (result.error) {
         setError(result.error);
       }
-    } catch (err) {
+    } catch {
       setError("Failed to load sessions");
     } finally {
       setLoading(false);
@@ -52,7 +54,7 @@ export default function ChatsPage() {
     try {
       await api.chat.deleteSession(sessionId, token);
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
-    } catch (err) {
+    } catch {
       setError("Failed to delete session");
     }
   };
@@ -66,7 +68,7 @@ export default function ChatsPage() {
       if (result.data) {
         router.push(`/dashboard?session=${result.data.id}&new=true`);
       }
-    } catch (err) {
+    } catch {
       setError("Failed to create session");
     }
   };
@@ -79,55 +81,70 @@ export default function ChatsPage() {
     signOut({ callbackUrl: "/" });
   };
 
+  const toggleTheme = () => {
+    setIsDark(!isDark);
+    document.documentElement.classList.toggle("dark", !isDark);
+  };
+
   if (status === "loading" || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-neo-white">
-        <div className="text-xl font-black">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-xl font-semibold">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-soft-gray font-body">
-      <header className="flex justify-between items-center w-full px-6 py-3 sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b-2 border-neo-black">
+    <div className="min-h-screen flex flex-col bg-background font-sans">
+      <header className="flex justify-between items-center w-full px-6 py-3 sticky top-0 z-50 bg-background/90 backdrop-blur-md border-b">
         <div className="flex items-center gap-8">
           <button
             onClick={() => router.push("/")}
-            className="text-lg font-black text-slate-800 uppercase tracking-tighter hover:text-neo-pink transition-colors"
+            className="text-lg font-semibold text-foreground hover:text-primary transition-colors"
           >
-            SOURCESYNC
+            PALN
           </button>
         </div>
-        <div className="flex items-center gap-3">
-          <button
+        <div className="flex items-center gap-2">
+          <Button
             onClick={handleNewChat}
-            className="kinetic-btn bg-neo-blue text-neo-white border-2 border-neo-black px-3 py-1.5 rounded-lg font-label text-[10px] font-bold uppercase"
+            variant="default"
+            size="sm"
           >
-            + NEW CHAT
-          </button>
-          <button onClick={() => router.push("/dashboard")} className="kinetic-btn bg-white border-2 border-slate-900 px-3 py-1.5 rounded-lg font-label text-[10px] font-bold uppercase">
-            HOME
-          </button>
+            + New Chat
+          </Button>
+          <Button 
+            onClick={() => router.push("/dashboard")} 
+            variant="ghost"
+            size="sm"
+          >
+            Home
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={toggleTheme}>
+            {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </Button>
           <div className="relative">
-            <button
+            <Button
               onClick={() => setShowUserMenu(!showUserMenu)}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm font-bold border-2 border-slate-900 bg-white hover:bg-slate-100 transition-colors rounded-lg"
+              variant="outline"
+              size="sm"
+              className="gap-2"
             >
               <User className="w-4 h-4" />
-              <span>USER</span>
-            </button>
+              <span>User</span>
+            </Button>
             {showUserMenu && (
-              <div className="absolute right-0 top-full mt-1 w-40 border-2 border-slate-900 bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-50">
-                <button className="w-full px-3 py-2 text-left text-sm font-bold hover:bg-brutal-yellow flex items-center gap-2 transition-colors">
+              <div className="absolute right-0 top-full mt-1 w-44 border bg-popover rounded-md shadow-lg z-50">
+                <button className="w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center gap-2 transition-colors rounded-t-md">
                   <Settings className="w-3 h-3" />
-                  SETTINGS
+                  Settings
                 </button>
                 <button
                   onClick={handleLogout}
-                  className="w-full px-3 py-2 text-left text-sm font-bold hover:bg-brutal-pink hover:text-white flex items-center gap-2 transition-colors border-t-2 border-slate-900"
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-destructive/10 hover:text-destructive flex items-center gap-2 transition-colors border-t rounded-b-md"
                 >
                   <LogOut className="w-3 h-3" />
-                  LOGOUT
+                  Logout
                 </button>
               </div>
             )}
@@ -136,35 +153,36 @@ export default function ChatsPage() {
       </header>
 
       {error && (
-        <div className="p-2 bg-neo-pink text-neo-black text-center font-bold text-sm">
+        <div className="p-2 bg-destructive/10 text-destructive text-center text-sm">
           Error: {error}
-          <button onClick={() => setError(null)} className="ml-2 underline">Dismiss</button>
+          <Button onClick={() => setError(null)} variant="link" className="ml-2 h-auto p-0 text-sm">Dismiss</Button>
         </div>
       )}
 
       <main className="flex-1 p-6 md:p-8">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center gap-4 mb-8">
-            <MessageSquare className="w-8 h-8" />
-            <h1 className="text-3xl md:text-4xl font-black">MY CHATS</h1>
+            <MessageSquare className="w-8 h-8 text-primary" />
+            <h1 className="text-3xl md:text-4xl font-semibold">My Chats</h1>
           </div>
 
           {sessions.length === 0 ? (
             <div className="text-center py-16">
-              <div className="w-20 h-20 mx-auto mb-6 bg-neo-yellow border-4 border-neo-black flex items-center justify-center">
-                <MessageSquare className="w-10 h-10" />
+              <div className="w-20 h-20 mx-auto mb-6 bg-primary/10 rounded-xl flex items-center justify-center">
+                <MessageSquare className="w-10 h-10 text-primary" />
               </div>
-              <h2 className="text-2xl font-black mb-4">NO CHATS YET</h2>
-              <p className="text-lg font-medium text-slate-600 mb-8">
+              <h2 className="text-2xl font-semibold mb-4">No chats yet</h2>
+              <p className="text-lg text-muted-foreground mb-8">
                 Start a new chat to get started
               </p>
-              <button
+              <Button
                 onClick={handleNewChat}
-                className="inline-flex items-center gap-2 bg-neo-blue text-neo-white text-lg font-black px-8 py-4 border-4 border-neo-black shadow-neo hover:shadow-neo-hover hover:translate-x-1 hover:translate-y-1 transition-all"
+                size="lg"
+                className="text-lg"
               >
-                <Plus className="w-5 h-5" />
-                START NEW CHAT
-              </button>
+                <Plus className="w-5 h-5 mr-2" />
+                Start New Chat
+              </Button>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -181,12 +199,13 @@ export default function ChatsPage() {
         </div>
       </main>
 
-      <button
+      <Button
         onClick={handleNewChat}
-        className="fixed bottom-8 right-8 w-16 h-16 bg-neo-blue border-4 border-neo-black rounded-full flex items-center justify-center shadow-neo hover:shadow-neo-hover hover:translate-x-1 hover:translate-y-1 transition-all z-50"
+        className="fixed bottom-8 right-8 w-14 h-14 rounded-full shadow-lg z-50"
+        size="icon"
       >
-        <Plus className="w-8 h-8 text-neo-white" />
-      </button>
+        <Plus className="w-6 h-6" />
+      </Button>
     </div>
   );
 }

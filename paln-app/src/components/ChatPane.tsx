@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, MessageSquare, FileSearch, MoreHorizontal, Trash2, Copy } from "lucide-react";
+import { Send, MessageSquare, FileSearch, MoreHorizontal, Trash2, Copy, Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface ChatMessage {
   id: string;
@@ -62,25 +67,25 @@ export function ChatPane({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-white relative">
+    <div className="flex-1 flex flex-col h-full bg-background relative">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-200 bg-white shrink-0 z-10 flex justify-between items-center">
-        <h2 className="text-sm font-medium text-gray-500 flex items-center gap-2">
+      <div className="px-4 py-3 border-b bg-background shrink-0 z-10 flex justify-between items-center">
+        <h2 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
           <MessageSquare className="w-4 h-4" /> 
-          <span className="text-xs text-gray-400">Chat</span>
+          <span className="text-xs">Chat</span>
         </h2>
         <div className="relative">
           <button 
             onClick={() => setShowMenu(!showMenu)}
-            className="p-1 hover:bg-gray-100 rounded transition-colors"
+            className="p-1 hover:bg-muted rounded-md transition-colors"
           >
-            <MoreHorizontal className="w-4 h-4 text-gray-400" />
+            <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
           </button>
           {showMenu && (
-            <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+            <div className="absolute right-0 top-full mt-1 w-40 bg-popover border rounded-md shadow-lg z-50">
               <button 
                 onClick={() => { if (onClearChat) onClearChat(); setShowMenu(false); }}
-                className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2 transition-colors rounded-t-lg"
+                className="w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center gap-2 transition-colors rounded-t-md"
               >
                 <Trash2 className="w-3 h-3" />
                 Clear Chat
@@ -91,7 +96,7 @@ export function ChatPane({
                   navigator.clipboard.writeText(allText);
                   setShowMenu(false); 
                 }}
-                className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2 transition-colors rounded-b-lg"
+                className="w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center gap-2 transition-colors rounded-b-md"
               >
                 <Copy className="w-3 h-3" />
                 Copy All
@@ -102,45 +107,69 @@ export function ChatPane({
       </div>
 
       {/* Messages Area */}
-      <div 
+      <ScrollArea 
         ref={containerRef}
-        className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 scroll-smooth"
+        className="flex-1 p-4 md:p-6 space-y-6"
       >
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
-            <p className="text-gray-400 text-sm">Upload a document to get started</p>
+            <p className="text-muted-foreground text-sm">Upload a document to get started</p>
           </div>
         ) : (
-          messages.map((msg) => (
+          messages.map((msg, index) => (
             <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
               {msg.role === "user" ? (
-                <div className="max-w-[75%] bg-gray-100 px-4 py-3 rounded-2xl rounded-tr-none">
-                  <p className="text-sm text-gray-800">{msg.content}</p>
+                <div className="max-w-[75%] bg-muted px-4 py-3 rounded-2xl rounded-tr-none">
+                  <p className="text-sm text-foreground">{msg.content}</p>
                   <div className="mt-2 flex items-center justify-end">
-                    <span className="text-[10px] text-gray-400">{formatTime()}</span>
+                    <span className="text-[10px] text-muted-foreground">{formatTime()}</span>
                   </div>
                 </div>
               ) : (
-                <div className="max-w-[85%] bg-white border border-gray-200 rounded-xl overflow-hidden">
-                  <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
-                    <h3 className="text-gray-800 font-medium text-base">
-                      {msg.title || "AI Response"}
-                    </h3>
-                    <span className="bg-gray-100 px-2 py-0.5 rounded text-xs text-gray-500">AI</span>
-                  </div>
+                <Card className="max-w-[85%]">
+                  {msg.title && !["AI Response", "Chat Response", "Error", "Generating..."].includes(msg.title) ? (
+                    <CardHeader className="px-5 py-3.5 border-b flex justify-between items-center bg-muted/10">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-primary" />
+                        <CardTitle className="text-sm md:text-base font-bold bg-gradient-to-r from-primary/90 to-primary/60 bg-clip-text text-transparent">
+                          {msg.title}
+                        </CardTitle>
+                      </div>
+                      <Badge variant="secondary" className="text-[10px] uppercase">AI Insight</Badge>
+                    </CardHeader>
+                  ) : msg.title === "Generating..." ? (
+                    <CardHeader className="px-5 py-4 border-b flex justify-between items-center">
+                      <CardTitle className="text-base font-medium animate-pulse text-muted-foreground">
+                        {msg.title}
+                      </CardTitle>
+                    </CardHeader>
+                  ) : null}
                   
-                  <div className="p-5 space-y-5">
-                    <p className="text-gray-700 text-sm leading-relaxed">
-                      {msg.content}
-                    </p>
+                  <CardContent className="p-5 space-y-5">
+                    {msg.content ? (
+                      <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
+                        {msg.content}
+                      </p>
+                    ) : (
+                      isLoading && index === messages.length - 1 ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground">Thinking</span>
+                          <span className="flex gap-1">
+                            <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                            <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                            <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                          </span>
+                        </div>
+                      ) : null
+                    )}
                     
                     {msg.extractive_summary && msg.extractive_summary.length > 0 && (
-                      <div className="bg-gray-50 border border-gray-100 rounded-lg p-4">
-                        <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">Key Points</h4>
+                      <div className="bg-muted/50 border rounded-lg p-4">
+                        <h4 className="text-xs font-medium text-muted-foreground uppercase mb-3">Key Points</h4>
                         <ul className="space-y-2">
-                          {msg.extractive_summary.map((point, i) => (
-                            <li key={i} className="flex items-start gap-2 text-sm text-gray-600">
-                              <span className="text-gray-400 mt-0.5">•</span>
+                          {msg.extractive_summary.map((point, idx) => (
+                            <li key={`${msg.id}-point-${idx}`} className="flex items-start gap-2 text-sm text-muted-foreground">
+                              <span className="text-muted-foreground mt-0.5">•</span>
                               <span>{point}</span>
                             </li>
                           ))}
@@ -155,25 +184,27 @@ export function ChatPane({
                     )}
                     
                     {msg.citations && msg.citations.length > 0 && (
-                      <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
-                        {msg.citations.map((cite, i) => (
-                          <button
-                            key={i}
+                      <div className="flex flex-wrap gap-2 pt-2 border-t">
+                        {msg.citations.map((cite) => (
+                          <Button
+                            key={cite.id || cite.label}
                             onClick={() => onCitationClick(cite)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors rounded-md"
+                            variant="outline"
+                            size="sm"
+                            className="text-xs"
                           >
-                            <FileSearch className="w-3 h-3" />
+                            <FileSearch className="w-3 h-3 mr-1" />
                             {cite.label}
-                          </button>
+                          </Button>
                         ))}
                       </div>
                     )}
                     
                     {msg.follow_ups && msg.follow_ups.length > 0 && (
                       <div className="flex flex-wrap gap-2 pt-2">
-                        {msg.follow_ups.slice(0, 3).map((followUp, i) => (
-                          <button
-                            key={i}
+                        {msg.follow_ups.slice(0, 3).map((followUp, idx) => (
+                          <Button
+                            key={`${msg.id}-${idx}`}
                             onClick={() => {
                               const prevUserMsg = messages
                                 .filter(m => m.role === "user" && messages.indexOf(m) < messages.indexOf(msg))
@@ -183,79 +214,58 @@ export function ChatPane({
                               }
                               onInputChange(followUp);
                             }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors rounded-full"
+                            variant="outline"
+                            size="sm"
+                            className="text-xs rounded-full"
                           >
                             {followUp}
-                          </button>
+                          </Button>
                         ))}
                       </div>
                     )}
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               )}
             </div>
           ))
         )}
-
-        {isLoading && (
-          <div className="flex justify-start">
-            <div className="max-w-[85%] bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-100">
-                <h3 className="text-gray-600 text-sm">Generating...</h3>
-              </div>
-              <div className="p-5">
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-500 text-sm">Thinking</span>
-                  <span className="flex gap-1">
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
         
         <div ref={messagesEndRef} />
-      </div>
+      </ScrollArea>
 
       {/* Input Area */}
-      <div className="px-4 py-3 bg-white border-t border-gray-200 shrink-0 z-10">
+      <div className="px-4 py-3 bg-background border-t shrink-0 z-10">
         <div className="relative max-w-3xl mx-auto">
-          <textarea
+          <Textarea
             value={inputValue}
             onChange={(e) => onInputChange(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && !isLoading && onSendMessage()}
             placeholder="Ask something..."
             disabled={isLoading}
             rows={1}
-            className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 pr-24 focus:ring-2 focus:ring-gray-300 focus:border-gray-300 resize-none text-sm"
+            className="pr-24 resize-none text-sm"
           />
           <div className="absolute right-3 bottom-2.5 flex items-center gap-2">
-            <button
+            <Button
               onClick={handleSendOrStop}
               disabled={!inputValue.trim() && !isLoading}
-              className={`p-2 rounded-lg flex items-center justify-center transition-colors disabled:opacity-50 ${
-                isLoading 
-                  ? "bg-gray-600 text-white" 
-                  : "bg-gray-800 text-white hover:bg-gray-700"
-              }`}
+              size="sm"
+              className={isLoading ? "bg-muted-foreground" : ""}
             >
               {isLoading ? (
                 <span className="text-sm">Stop</span>
               ) : (
                 <Send className="w-4 h-4" />
               )}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
 
       {/* Footer */}
-      <div className="px-4 py-1.5 bg-gray-50 border-t border-gray-100 shrink-0 z-10 flex justify-between items-center">
-        <span className="text-[10px] text-gray-400">PALN v1.0</span>
-        <span className="text-[10px] text-gray-400">Powered by Ollama</span>
+      <div className="px-4 py-1.5 bg-muted/30 border-t shrink-0 z-10 flex justify-between items-center">
+        <span className="text-[10px] text-muted-foreground">PALN v1.0</span>
+        <span className="text-[10px] text-muted-foreground">Powered by Ollama</span>
       </div>
     </div>
   );

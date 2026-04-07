@@ -115,6 +115,64 @@ class OllamaClient:
         except httpx.RequestError as e:
             raise OllamaError(f"Cannot connect to Ollama: {e}. Is Ollama running at {self.base_url}?")
 
+    async def describe_image(self, image_base64: str, prompt: Optional[str] = None) -> str:
+        """Generate natural language description for an image using vision model.
+        
+        Args:
+            image_base64: Base64 encoded image
+            prompt: Optional custom prompt (defaults to describing the image)
+            
+        Returns:
+            Natural language description of the image
+        """
+        settings = get_settings()
+        vision_model = settings.ollama_vision_model
+        
+        default_prompt = "Describe this image in detail. Include any text you see, objects, people, colors, layout, and context. Be thorough and specific."
+        
+        try:
+            client = await self._get_client()
+            payload = {
+                "model": vision_model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt or default_prompt,
+                        "images": [image_base64],
+                    }
+                ],
+                "stream": False,
+            }
+            
+            response = await client.post(
+                f"{self.base_url}/api/chat",
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data["message"]["content"]
+        except httpx.HTTPStatusError as e:
+            raise OllamaError(f"Vision model failed: {e.response.status_code}. Is Ollama running with model '{vision_model}'? Run 'ollama pull {vision_model}'")
+        except httpx.RequestError as e:
+            raise OllamaError(f"Cannot connect to Ollama: {e}. Is Ollama running at {self.base_url}?")
+
+    async def is_vision_model_available(self) -> bool:
+        """Check if vision model is available in Ollama."""
+        try:
+            client = await self._get_client()
+            response = await client.get(
+                f"{self.base_url}/api/tags",
+                timeout=10.0,
+            )
+            if response.status_code == 200:
+                models = response.json().get("models", [])
+                model_names = [m["name"] for m in models]
+                settings = get_settings()
+                return settings.ollama_vision_model in model_names
+            return False
+        except Exception:
+            return False
+
     async def chat_stream(
         self,
         messages: list[dict],
@@ -179,45 +237,6 @@ class OllamaClient:
         
         return await self.chat(messages)
 
-    async def generate_follow_ups(
-        self,
-        question: str,
-        answer: str,
-        context_chunks: list[dict],
-    ) -> list[str]:
-        """Generate follow-up questions based on the answer and context."""
-        context_text = "\n\n".join(
-            f"[Chunk {i+1}]: {chunk.get('chunk_text', '')[:300]}..."
-            for i, chunk in enumerate(context_chunks[:3])
-        )
-        
-        follow_up_prompt = f"""Based on the following question and answer, generate 3 natural follow-up questions that the user might ask next.
-
-Question: {question}
-
-Answer: {answer}
-
-Context (for reference):
-{context_text}
-
-Generate exactly 3 follow-up questions, one per line, without numbering or bullets. Make them specific and relevant to the content."""
-
-        try:
-            response = await self.chat(
-                messages=[{"role": "user", "content": follow_up_prompt}],
-                system_prompt="You generate concise, relevant follow-up questions. Output only the questions, one per line, no numbering.",
-            )
-            
-            follow_ups = [
-                line.strip() 
-                for line in response.strip().split("\n") 
-                if line.strip() and len(line.strip()) > 10
-            ][:3]
-            
-            return follow_ups
-        except Exception:
-            return []
-
     async def generate_chat_response(
         self,
         question: str,
@@ -251,7 +270,7 @@ USER QUESTION: {question}
 
 OUTPUT FORMAT (STRICT JSON - no other text):
 {{
-  "title": "8-12 word concise title capturing the core topic",
+  "title": "A highly creative, catchy, 2-5 word title summarizing your response (e.g., 'The Quantum Leap', 'Data Goldmine', 'Key Breakthroughs')",
   "answer": "Your detailed answer based ONLY on the context (2-3 sentences)",
   "extractive_summary": [
     "8-10 bullet points that are elaborative and detailed",

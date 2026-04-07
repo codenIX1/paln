@@ -2,7 +2,11 @@
 
 import { useState } from "react";
 import { Upload, FileText, X, Link as LinkIcon, Image, Video, Plus, MessageSquare, Check } from "lucide-react";
-import { NeoButton } from "./NeoButton";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface Source {
   id: string;
@@ -15,7 +19,7 @@ interface SidebarProps {
   selectedSourceIds: string[];
   sessionTitle: string;
   onSessionTitleChange: (title: string) => void;
-  onAddSource: (source: Source) => void;
+  onAddSource: (_source: Source) => void;
   onRemoveSource: (id: string) => void;
   onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onUploadText: (title: string, content: string) => Promise<void>;
@@ -93,152 +97,174 @@ export function Sidebar({
   };
 
   return (
-    <aside className="w-full md:w-56 border-b-4 md:border-b-0 md:border-r-4 border-neo-black flex flex-col">
+    <aside className="w-full md:w-64 border-b md:border-b-0 md:border-r border-border/50 flex flex-col bg-background/50 backdrop-blur-sm">
       {/* Session Title - Editable */}
-      <div className="p-3 border-b-2 border-neo-black bg-neo-yellow">
+      <div className="p-3 border-b border-border/50 bg-muted/10">
         {isEditingTitle ? (
-          <div className="flex items-center gap-1">
-            <input
+          <div className="flex items-center gap-2">
+            <Input
               type="text"
               value={editedTitle}
               onChange={(e) => setEditedTitle(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleTitleSubmit()}
-              className="flex-1 text-xs font-bold p-1 border-2 border-neo-black focus:outline-none"
+              className="flex-1 text-sm"
               autoFocus
             />
-            <button
+            <Button
               onClick={handleTitleSubmit}
-              className="p-1 bg-neo-black text-neo-white border-2 border-neo-black hover:bg-neo-green"
+              size="sm"
+              variant="outline"
             >
               <Check className="w-3 h-3" />
-            </button>
+            </Button>
           </div>
         ) : (
           <div 
             onClick={() => { setEditedTitle(sessionTitle); setIsEditingTitle(true); }}
-            className="flex items-center gap-2 cursor-pointer hover:bg-neo-black/10 p-1 -m-1 rounded transition-colors"
+            className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-2 -m-2 rounded-md transition-colors"
           >
-            <MessageSquare className="w-4 h-4" />
-            <span className="flex-1 text-xs font-bold truncate">{sessionTitle}</span>
+            <MessageSquare className="w-4 h-4 text-muted-foreground" />
+            <span className="flex-1 text-sm font-medium truncate">{sessionTitle}</span>
           </div>
         )}
       </div>
 
-      <div className="p-2 border-b-2 border-neo-black bg-neo-pink text-neo-white flex justify-between items-center">
-        <h2 className="font-black text-sm flex items-center gap-1.5">
-          <FileText className="w-4 h-4" /> SOURCES
+      <div className="p-3 border-b border-border/50 flex justify-between items-center bg-muted/5">
+        <h2 className="font-bold text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+          <FileText className="w-4 h-4" /> Sources
         </h2>
-        <button onClick={() => setShowUploadPanel(!showUploadPanel)} className="p-1 hover:bg-neo-black/20 rounded transition-colors">
+        <Button 
+          onClick={() => setShowUploadPanel(!showUploadPanel)} 
+          size="sm"
+          variant="ghost"
+        >
           <Plus className="w-4 h-4" />
-        </button>
+        </Button>
       </div>
 
       {showUploadPanel && (
-        <div className="p-3 border-b-2 border-neo-black bg-neo-white space-y-2">
+        <div className="p-3 border-b border-border/50 bg-background/50 space-y-3">
           <label className="block cursor-pointer">
             <input type="file" multiple className="hidden" onChange={onFileUpload} accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.gif,.mp4,.mov" />
-            <div className="border-2 border-dashed border-neo-black p-3 text-center hover:bg-neo-yellow transition-colors">
-              <Upload className="w-5 h-5 mx-auto mb-1" />
-              <span className="text-xs font-bold">UPLOAD</span>
+            <div className="border-2 border-dashed border-primary/20 p-4 text-center hover:bg-primary/5 hover:border-primary/40 transition-all rounded-xl cursor-pointer group">
+              <Upload className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
+              <span className="text-sm font-medium">Upload files</span>
             </div>
           </label>
-          <div className="border-2 border-neo-black p-2 space-y-2">
-            <input
+          <div className="space-y-2">
+            <Input
               type="text"
               value={textTitle}
               onChange={(e) => setTextTitle(e.target.value)}
               placeholder="Title (optional)"
-              className="w-full text-xs p-1 border border-neo-black focus:outline-none"
+              className="text-sm"
             />
-            <textarea
+            <Textarea
               value={uploadedText}
               onChange={(e) => setUploadedText(e.target.value)}
               placeholder="Paste text..."
-              className="w-full text-xs p-1 resize-none border-none focus:outline-none"
-              rows={2}
+              className="text-sm resize-none"
+              rows={3}
             />
-            <button 
+            <Button 
               onClick={handleTextSubmit} 
               disabled={!uploadedText.trim() || isProcessingText}
-              className="w-full py-1 bg-neo-black text-neo-white text-xs font-bold hover:bg-neo-yellow hover:text-neo-black transition-colors disabled:opacity-50"
+              className="w-full"
+              size="sm"
             >
-              {isProcessingText ? "PROCESSING..." : "ADD TEXT"}
-            </button>
+              {isProcessingText ? "Processing..." : "Add text"}
+            </Button>
           </div>
-          <form onSubmit={handleLinkSubmit} className="flex gap-1">
-            <input
+          <form onSubmit={handleLinkSubmit} className="flex gap-2">
+            <Input
               type="url"
               value={linkUrl}
               onChange={(e) => setLinkUrl(e.target.value)}
-              placeholder="URL"
-              className="flex-1 text-xs p-1.5 border-2 border-neo-black focus:outline-none"
+              placeholder="https://example.com"
+              className="flex-1 text-sm"
             />
-            <button 
+            <Button 
               type="submit" 
               disabled={!linkUrl || isProcessingLink}
-              className="px-2 py-1 bg-neo-blue text-neo-white text-xs font-bold border-2 border-neo-black hover:bg-neo-yellow hover:text-neo-black transition-colors disabled:opacity-50"
+              size="sm"
             >
-              {isProcessingLink ? "..." : "+"}
-            </button>
+              {isProcessingLink ? "..." : "Add"}
+            </Button>
           </form>
-          {isUploading && <div className="text-xs font-bold text-center py-1 bg-neo-pink border-2 border-neo-black">UPLOADING...</div>}
+          {isUploading && (
+            <div className="text-sm text-center py-2 bg-muted/50 rounded-md">
+              Uploading...
+            </div>
+          )}
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-2 space-y-2">
+      <ScrollArea className="flex-1 p-2">
         {sources.length > 0 && (
-          <div className="flex gap-1 text-xs">
-            <button 
+          <div className="flex gap-2 text-xs mb-2">
+            <Button 
               onClick={onSelectAllSources}
-              className="flex-1 py-1 border border-neo-black hover:bg-neo-black hover:text-neo-white transition-colors font-bold"
+              variant="outline"
+              size="sm"
+              className="flex-1"
             >
-              ALL
-            </button>
-            <button 
+              Select all
+            </Button>
+            <Button 
               onClick={onClearSelection}
-              className="flex-1 py-1 border border-neo-black hover:bg-neo-black hover:text-neo-white transition-colors font-bold"
+              variant="outline"
+              size="sm"
+              className="flex-1"
             >
-              CLEAR
-            </button>
+              Clear
+            </Button>
           </div>
         )}
         
         {sources.length === 0 ? (
-          <p className="text-xs font-medium text-neo-black/50 p-2">No sources yet</p>
+          <p className="text-sm text-muted-foreground p-2">No sources yet</p>
         ) : (
-          sources.map((source) => (
-            <div 
-              key={source.id} 
-              onClick={() => onToggleSource(source.id)}
-              className={`flex items-center gap-2 p-2 border-2 border-neo-black group hover:bg-neo-pink hover:text-neo-white transition-colors cursor-pointer ${
-                selectedSourceIds.includes(source.id) ? "bg-neo-blue text-neo-white" : "bg-neo-yellow"
-              }`}
-            >
-              <input 
-                type="checkbox" 
-                checked={selectedSourceIds.includes(source.id)}
-                onChange={() => onToggleSource(source.id)}
-                className="w-4 h-4"
-                onClick={(e) => e.stopPropagation()}
-              />
-              <span>{getSourceIcon(source.type)}</span>
-              <span className="flex-1 text-xs font-bold truncate">{source.name}</span>
-              <button 
-                onClick={(e) => { e.stopPropagation(); onRemoveSource(source.id); }} 
-                className="opacity-0 group-hover:opacity-100 transition-opacity"
+          <div className="space-y-1">
+            {sources.map((source) => (
+              <div 
+                key={source.id} 
+                onClick={() => onToggleSource(source.id)}
+                className={`flex items-center gap-2 p-2.5 rounded-xl group transition-all cursor-pointer ${
+                  selectedSourceIds.includes(source.id) 
+                    ? "bg-primary/10 border border-primary/30 shadow-sm" 
+                    : "bg-muted/20 hover:bg-muted/40 border border-transparent"
+                }`}
               >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          ))
+                <input 
+                  type="checkbox" 
+                  checked={selectedSourceIds.includes(source.id)}
+                  onChange={() => onToggleSource(source.id)}
+                  className="w-4 h-4 rounded"
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <span className="text-muted-foreground">{getSourceIcon(source.type)}</span>
+                <span className="flex-1 text-sm truncate">{source.name}</span>
+                <Button 
+                  onClick={(e) => { e.stopPropagation(); onRemoveSource(source.id); }} 
+                  size="sm"
+                  variant="ghost"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
+                >
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+            ))}
+          </div>
         )}
         
         {selectedSourceIds.length > 0 && (
-          <div className="text-xs font-bold text-center py-1 bg-neo-green text-neo-black border-2 border-neo-black">
-            {selectedSourceIds.length} source(s) selected
+          <div className="text-sm text-center py-2 mt-2">
+            <Badge variant="secondary">
+              {selectedSourceIds.length} source(s) selected
+            </Badge>
           </div>
         )}
-      </div>
+      </ScrollArea>
     </aside>
   );
 }

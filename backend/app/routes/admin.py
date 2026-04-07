@@ -2,10 +2,13 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 
 from app.auth.dependencies import get_current_user
 from app.config import get_settings
-from app.db.sqlite import get_db
+from app.db.database import get_db
+from app.db.models import FollowUpInteraction, Session
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -20,6 +23,7 @@ class FollowUpStats(BaseModel):
 @router.get("/follow-up-stats", response_model=FollowUpStats)
 async def get_follow_up_stats(
     current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get follow-up interaction statistics (admin only)."""
     settings = get_settings()
@@ -30,38 +34,35 @@ async def get_follow_up_stats(
             detail="Admin access required",
         )
     
-    db = await get_db()
-    
     # Total clicks
-    row = await db.execute("SELECT COUNT(*) as cnt FROM follow_up_interactions")
-    total_clicks = (await row.fetchone())["cnt"]
+    result = await db.execute(select(func.count(FollowUpInteraction.id)))
+    total_clicks = result.scalar() or 0
     
-    # Messages with follow-ups (approximate - count assistant messages with follow_ups in content or from sessions with interactions)
-    row = await db.execute(
-        """SELECT COUNT(DISTINCT message_id) as cnt FROM follow_up_interactions"""
+    # Messages with follow-ups
+    result = await db.execute(
+        select(func.count(func.distinct(FollowUpInteraction.message_id)))
     )
-    messages_with_followups = (await row.fetchone())["cnt"]
+    messages_with_followups = result.scalar() or 0
     
     # Click rate
     click_rate = round((total_clicks / max(messages_with_followups, 1)) * 100, 1) if messages_with_followups > 0 else 0.0
     
     # Recent clicks (last 20)
-    row = await db.execute(
-        """SELECT f.*, s.title as session_title
-           FROM follow_up_interactions f
-           LEFT JOIN sessions s ON f.session_id = s.id
-           ORDER BY f.clicked_at DESC
-           LIMIT 20""",
+    result = await db.execute(
+        select(FollowUpInteraction, Session.title)
+        .join(Session, FollowUpInteraction.session_id == Session.id, isouter=True)
+        .order_by(FollowUpInteraction.clicked_at.desc())
+        .limit(20)
     )
-    recent = await row.fetchall()
+    rows = result.all()
     recent_clicks = [
         {
-            "original_question": r["original_question"][:100] + "..." if len(r["original_question"]) > 100 else r["original_question"],
-            "follow_up_clicked": r["follow_up_clicked"],
-            "clicked_at": r["clicked_at"],
-            "session_title": r.get("session_title", "Unknown"),
+            "original_question": r[0].original_question[:100] + "..." if len(r[0].original_question) > 100 else r[0].original_question,
+            "follow_up_clicked": r[0].follow_up_clicked,
+            "clicked_at": str(r[0].clicked_at),
+            "session_title": r[1] or "Unknown",
         }
-        for r in recent
+        for r in rows
     ]
     
     return FollowUpStats(

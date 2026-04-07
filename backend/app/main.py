@@ -6,8 +6,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.db.init_db import init_tables
-from app.db.sqlite import db
+from app.db.database import init_db, close_db
+from app.db.repositories import JobRepository
+from app.db.database import async_session_factory
 from app.routes import auth, sources, chat, admin, summarize
 from app.services.qdrant_client import qdrant_db
 
@@ -17,17 +18,26 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     
-    await db.connect()
-    await init_tables()
+    await init_db()
     
     try:
         await qdrant_db.create_collection()
     except Exception as e:
         print(f"Warning: Could not initialize Qdrant: {e}")
     
+    try:
+        async with async_session_factory() as session:
+            job_repo = JobRepository(session)
+            cleaned = await job_repo.cleanup_stale_jobs()
+            if cleaned > 0:
+                print(f"Cleaned up {cleaned} stale jobs")
+            await session.commit()
+    except Exception as e:
+        print(f"Warning: Could not cleanup stale jobs: {e}")
+    
     yield
     
-    await db.disconnect()
+    await close_db()
 
 
 app = FastAPI(

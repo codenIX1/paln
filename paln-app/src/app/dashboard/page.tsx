@@ -1,14 +1,17 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { FileText, User, LogOut, Settings, MessageSquare, ArrowLeft } from "lucide-react";
+import { User, LogOut, Settings, ArrowLeft, Bell, HelpCircle, Sparkles } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 import { ChatPane } from "@/components/ChatPane";
 import { ContextViewer } from "@/components/ContextViewer";
 import { UploadModal } from "@/components/UploadModal";
+import { SummaryModal } from "@/components/SummaryModal";
 import { api, Source, Session } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface ChatMessage {
   id: string;
@@ -38,16 +41,16 @@ interface RetrievedChunk {
   type: "text" | "image" | "metadata";
 }
 
-export default function Dashboard() {
+function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session, status } = useSession();
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showSessionMenu, setShowSessionMenu] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [sources, setSources] = useState<Source[]>([]);
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [currentSessionSourceIds, setCurrentSessionSourceIds] = useState<string[]>([]);
   const [currentSessionTitle, setCurrentSessionTitle] = useState<string>("New Chat");
@@ -61,7 +64,7 @@ export default function Dashboard() {
   const streamingControllerRef = useRef<AbortController | null>(null);
 
   const getToken = (): string | undefined => {
-    return (session?.user as any)?.accessToken || (session as any)?.accessToken;
+    return (session?.user as { accessToken?: string })?.accessToken;
   };
 
   const toggleSourceSelection = (sourceId: string) => {
@@ -86,7 +89,6 @@ export default function Dashboard() {
     } else if (status === "authenticated") {
       const token = getToken();
       if (token) {
-        // Don't load sources if it's a new chat
         const isNewChat = searchParams?.get("new");
         if (isNewChat !== "true") {
           loadSources(token);
@@ -97,13 +99,11 @@ export default function Dashboard() {
   }, [status, session]);
 
   useEffect(() => {
-    // Handle new chat param - clear sources for fresh chat
     const isNewChat = searchParams?.get("new");
     if (isNewChat === "true") {
-      setSources([]); // Clear ALL sources from list
+      setSources([]);
       setSelectedSourceIds([]);
       setCurrentSessionSourceIds([]);
-      // Remove the query param to clean URL
       const url = new URL(window.location.href);
       url.searchParams.delete("new");
       window.history.replaceState({}, "", url.toString());
@@ -115,11 +115,9 @@ export default function Dashboard() {
     if (sessionsResult.data) {
       setSessions(sessionsResult.data.sessions);
       
-      // Check for session query param
       const sessionParam = searchParams?.get("session");
       
       if (sessionParam && sessionsResult.data.sessions.some(s => s.id === sessionParam)) {
-        // Load specific session from query param
         const targetSession = sessionsResult.data.sessions.find(s => s.id === sessionParam)!;
         setCurrentSessionId(targetSession.id);
         setCurrentSessionTitle(targetSession.title);
@@ -127,7 +125,6 @@ export default function Dashboard() {
         setSelectedSourceIds(targetSession.source_ids || []);
         loadMessages(targetSession.id, token);
       } else if (sessionsResult.data.sessions.length > 0) {
-        // Default: load first session
         const firstSession = sessionsResult.data.sessions[0];
         setCurrentSessionId(firstSession.id);
         setCurrentSessionTitle(firstSession.title);
@@ -158,37 +155,13 @@ export default function Dashboard() {
       setCurrentSessionTitle(createResult.data.title);
       setCurrentSessionSourceIds(sourceIds || []);
       setSelectedSourceIds([]);
-      setSources([]); // Clear all sources for fresh session
+      setSources([]);
       setMessages([]);
     }
   };
 
-  const handleStartNewChat = () => {
-    const token = getToken();
-    if (!token) return;
-    
-    if (selectedSourceIds.length > 0) {
-      createNewSession(token, selectedSourceIds);
-    } else {
-      createNewSession(token);
-    }
-  };
-
-  const switchSession = async (session: Session) => {
-    const token = getToken();
-    if (!token) return;
-    
-    setCurrentSessionId(session.id);
-    setCurrentSessionTitle(session.title);
-    setCurrentSessionSourceIds(session.source_ids || []);
-    setSelectedSourceIds(session.source_ids || []);
-    setShowSessionMenu(false);
-    loadMessages(session.id, token);
-  };
-
   const handleSessionTitleChange = (newTitle: string) => {
     setCurrentSessionTitle(newTitle);
-    // Update in sessions list
     setSessions(prev => prev.map(s => 
       s.id === currentSessionId ? { ...s, title: newTitle } : s
     ));
@@ -230,54 +203,20 @@ export default function Dashboard() {
     for (const file of Array.from(files)) {
       const result = await api.sources.upload(file, token);
       if (result.data) {
-        const newSource = { id: result.data!.id, name: result.data!.name, type: "file" as const };
-        setSources((prev) => [...prev, newSource]);
-        setSelectedSourceIds(prev => [...prev, result.data!.id]);
+        const data = result.data as any;
         
-        // Auto-generate response after upload
-        await autoGenerateResponse(result.data!.id);
+        if (data.job_id) {
+          // It's a background job, we don't have the source ID yet
+          alert(`File "${file.name}" uploaded. Background processing started.`);
+        } else if (data.id) {
+          // Synchronous response (fallback)
+          const newSource = { id: data.id, name: data.name || file.name, type: "file" as const };
+          setSources((prev) => [...prev, newSource]);
+          setSelectedSourceIds(prev => [...prev, data.id]);
+        }
       }
     }
     setIsUploading(false);
-  };
-  
-  const autoGenerateResponse = async (sourceId: string) => {
-    const token = getToken();
-    if (!token || !currentSessionId) return;
-    
-    const autoQuestion = "Provide a summary of this document";
-    
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      role: "user",
-      content: autoQuestion,
-    };
-    setMessages((prev) => [...prev, userMessage]);
-    setIsLoadingChat(true);
-    
-    const result = await api.chat.sendMessage(currentSessionId, autoQuestion, token, [sourceId]);
-    setIsLoadingChat(false);
-    
-    if (result.data) {
-      const aiResponse: ChatMessage = {
-        id: result.data.message.id,
-        role: "ai",
-        title: result.data.title,
-        content: result.data.answer,
-        extractive_summary: result.data.extractive_summary,
-        citations: result.data.citations || [],
-        follow_ups: result.data.follow_ups || [],
-      };
-      setMessages((prev) => [...prev, aiResponse]);
-    } else if (result.error) {
-      const errorResponse: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: "ai",
-        content: `Error: ${result.error}`,
-        isTruncated: true,
-      };
-      setMessages((prev) => [...prev, errorResponse]);
-    }
   };
 
   const handleUploadText = async (title: string, content: string) => {
@@ -288,7 +227,6 @@ export default function Dashboard() {
     if (result.data) {
       const newSource = { id: result.data!.id, name: result.data!.name, type: "text" as const };
       setSources((prev) => [...prev, newSource]);
-      // Auto-select newly uploaded source
       setSelectedSourceIds(prev => [...prev, result.data!.id]);
     }
   };
@@ -301,7 +239,6 @@ export default function Dashboard() {
     if (result.data) {
       const newSource = { id: result.data!.id, name: result.data!.name, type: "link" as const };
       setSources((prev) => [...prev, newSource]);
-      // Auto-select newly uploaded source
       setSelectedSourceIds(prev => [...prev, result.data!.id]);
     }
   };
@@ -312,8 +249,18 @@ export default function Dashboard() {
     const token = getToken();
     if (!token) return;
 
-    // Use session's saved sources first, fallback to current sidebar selection
     const sourceIds = currentSessionSourceIds.length > 0 ? currentSessionSourceIds : selectedSourceIds;
+
+    // Guard: don't allow sending if no documents are selected
+    if (!sourceIds || sourceIds.length === 0) {
+      const warningMsg: ChatMessage = {
+        id: Date.now().toString(),
+        role: "ai",
+        content: "⚠️ Please upload and select at least one document source before asking questions. I can only answer based on your uploaded documents.",
+      };
+      setMessages((prev) => [...prev, warningMsg]);
+      return;
+    }
 
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
@@ -322,7 +269,6 @@ export default function Dashboard() {
     };
     setMessages((prev) => [...prev, userMessage]);
 
-    // Create placeholder AI message for streaming
     const aiMessageId = (Date.now() + 1).toString();
     const aiMessage: ChatMessage = {
       id: aiMessageId,
@@ -338,7 +284,6 @@ export default function Dashboard() {
     const { signal } = streamingControllerRef.current;
 
     try {
-      // Stream response tokens
       for await (const chunk of api.chat.sendMessageStream(
         currentSessionId,
         inputValue,
@@ -358,7 +303,6 @@ export default function Dashboard() {
         if (chunk.done) break;
       }
 
-      // Fetch final response metadata (title, summary, citations)
       const finalResult = await api.chat.sendMessage(
         currentSessionId,
         inputValue,
@@ -382,7 +326,6 @@ export default function Dashboard() {
         );
       }
     } catch (error) {
-      // Fallback: try non-streaming request
       try {
         const fallbackResult = await api.chat.sendMessage(
           currentSessionId,
@@ -410,7 +353,7 @@ export default function Dashboard() {
           setMessages((prev) => prev.filter((msg) => msg.id !== aiMessageId));
           setError(fallbackResult.error);
         }
-      } catch (fallbackError) {
+      } catch {
         setMessages((prev) => prev.filter((msg) => msg.id !== aiMessageId));
         setError(error instanceof Error ? error.message : "Streaming failed");
       }
@@ -447,17 +390,15 @@ export default function Dashboard() {
     const token = getToken();
     if (!token) return;
     
-    // When creating new chat, use currently selected sources in sidebar
     const sourceIds = selectedSourceIds.length > 0 ? selectedSourceIds : [];
     const result = await api.chat.createSession("New Chat", sourceIds, token);
     if (result.data) {
       setCurrentSessionId(result.data.id);
       setCurrentSessionTitle(result.data.title);
       setCurrentSessionSourceIds(sourceIds);
-      setSelectedSourceIds([]); // Clear sidebar selection for new chat
-      setSources([]); // Clear all sources from list for fresh chat
+      setSelectedSourceIds([]);
+      setSources([]);
       setMessages([]);
-      // Update sessions list
       setSessions(prev => [{ ...result.data!, source_ids: sourceIds }, ...prev]);
     }
   };
@@ -474,75 +415,101 @@ export default function Dashboard() {
     setIsLoadingChat(false);
   };
 
+
+
   if (status === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-neo-white">
-        <div className="text-xl font-black">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-xl font-semibold">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-soft-gray font-body">
-        <header className="flex justify-between items-center w-full px-6 py-2 sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b-2 border-slate-900">
-          <div className="flex items-center gap-12">
+    <div className="min-h-screen flex flex-col bg-background font-sans mesh-bg">
+        <header className="floating-nav sticky top-3 z-50 px-5 py-2 flex justify-between items-center mx-4">
+          <div className="flex items-center gap-8">
             <button
               onClick={() => router.push("/chats")}
-              className="flex items-center gap-2 text-slate-800 hover:text-neo-pink transition-colors"
+              className="flex items-center gap-2 text-foreground hover:text-primary transition-colors"
             >
-              <ArrowLeft className="w-4 h-4" />
-              <span className="text-lg font-black uppercase tracking-tighter">SOURCESYNC</span>
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center">
+                  <Sparkles className="w-3.5 h-3.5 text-primary" />
+                </div>
+                <span className="text-lg font-bold tracking-tight">PALN</span>
+              </div>
             </button>
-            <nav className="hidden md:flex items-center gap-6">
-              <a className="text-brutal-blue border-b border-brutal-blue pb-0.5 font-label uppercase text-[10px] font-bold" href="#">Workspace</a>
-              <a className="text-slate-400 font-medium hover:text-slate-700 transition-colors font-label uppercase text-[10px] font-bold" href="#">Sources</a>
-              <a className="text-slate-400 font-medium hover:text-slate-700 transition-colors font-label uppercase text-[10px] font-bold" href="#">Archive</a>
-              <a className="text-slate-400 font-medium hover:text-slate-700 transition-colors font-label uppercase text-[10px] font-bold" href="#">Settings</a>
+            <nav className="hidden md:flex items-center gap-1">
+              <a className="text-sm font-medium px-3 py-1.5 rounded-full bg-primary/10 text-primary" href="#">Workspace</a>
+              <a className="text-sm font-medium px-3 py-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all" href="#">Sources</a>
+              <a className="text-sm font-medium px-3 py-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all" href="#">Archive</a>
+              <a className="text-sm font-medium px-3 py-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all" href="#">Settings</a>
             </nav>
           </div>
-          <div className="flex items-center gap-3">
-            <button 
+          <div className="flex items-center gap-2">
+            <Button 
               onClick={handleNewChat}
-              className="kinetic-btn bg-neo-blue text-neo-white border-2 border-neo-black px-3 py-1.5 rounded-lg font-label text-[10px] font-bold uppercase"
+              variant="default"
+              size="sm"
+              className="rounded-full glow-primary"
             >
-              + NEW CHAT
-            </button>
-            <button 
+              + New Chat
+            </Button>
+            <Button 
               onClick={() => setShowUploadModal(true)}
-              className="kinetic-btn bg-brutal-yellow border-2 border-slate-900 px-3 py-1.5 rounded-lg font-label text-[10px] font-bold uppercase"
+              variant="outline"
+              size="sm"
+              className="rounded-full"
             >
-              + UPLOAD
-            </button>
-            <button onClick={() => router.push("/")} className="kinetic-btn bg-white border-2 border-slate-900 px-3 py-1.5 rounded-lg font-label text-[10px] font-bold uppercase">
-              HOME
-            </button>
-            <button onClick={() => setShowRightPane(!showRightPane)} className="md:hidden kinetic-btn bg-white border-2 border-slate-900 px-3 py-1.5 rounded-lg font-label text-[10px] font-bold uppercase">
-              {showRightPane ? "HIDE" : "SHOW"}
-            </button>
-            <div className="flex gap-2 ml-2">
-              <span className="material-symbols-outlined text-slate-400 text-lg cursor-pointer p-1 hover:bg-slate-100 rounded">notifications</span>
-              <span className="material-symbols-outlined text-slate-400 text-lg cursor-pointer p-1 hover:bg-slate-100 rounded">help</span>
+              + Upload
+            </Button>
+            <Button 
+              onClick={() => router.push("/")} 
+              variant="ghost"
+              size="sm"
+            >
+              Home
+            </Button>
+            <Button 
+              onClick={() => setShowRightPane(!showRightPane)} 
+              className="md:hidden"
+              variant="outline"
+              size="sm"
+            >
+              {showRightPane ? "Hide" : "Show"}
+            </Button>
+            <div className="flex items-center gap-2 ml-1">
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <Bell className="w-4 h-4 text-muted-foreground" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <HelpCircle className="w-4 h-4 text-muted-foreground" />
+              </Button>
+              <ThemeToggle />
             </div>
             <div className="relative">
-              <button
+              <Button
                 onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm font-bold border-2 border-slate-900 bg-white hover:bg-slate-100 transition-colors rounded-lg"
+                variant="outline"
+                size="sm"
+                className="gap-2"
               >
                 <User className="w-4 h-4" />
-                <span>USER</span>
-              </button>
+                <span>User</span>
+              </Button>
               {showUserMenu && (
-                <div className="absolute right-0 top-full mt-1 w-40 border-2 border-slate-900 bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-50">
-                  <button className="w-full px-3 py-2 text-left text-sm font-bold hover:bg-brutal-yellow flex items-center gap-2 transition-colors">
+                <div className="absolute right-0 top-full mt-2 w-44 glass rounded-xl shadow-lg z-50 overflow-hidden">
+                  <button className="w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center gap-2 transition-colors rounded-t-md">
                     <Settings className="w-3 h-3" />
-                    SETTINGS
+                    Settings
                   </button>
                   <button
                     onClick={handleLogout}
-                    className="w-full px-3 py-2 text-left text-sm font-bold hover:bg-brutal-pink hover:text-white flex items-center gap-2 transition-colors border-t-2 border-slate-900"
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-destructive/10 hover:text-destructive flex items-center gap-2 transition-colors border-t rounded-b-md"
                   >
                     <LogOut className="w-3 h-3" />
-                    LOGOUT
+                    Logout
                   </button>
                 </div>
               )}
@@ -551,13 +518,13 @@ export default function Dashboard() {
         </header>
 
         {error && (
-          <div className="p-2 bg-neo-pink text-neo-black text-center font-bold text-sm">
+          <div className="p-2 bg-destructive/10 text-destructive text-center text-sm">
             Error: {error}
-            <button onClick={() => setError(null)} className="ml-2 underline">Dismiss</button>
+            <Button onClick={() => setError(null)} variant="link" className="ml-2 h-auto p-0 text-sm">Dismiss</Button>
           </div>
         )}
 
-      <div className="flex-1 flex flex-col md:flex-row overflow-visible">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden mx-4 mb-4 rounded-2xl glass">
         <Sidebar
           sources={sources}
           selectedSourceIds={selectedSourceIds}
@@ -574,7 +541,7 @@ export default function Dashboard() {
           isUploading={isUploading}
         />
 
-        <div className="flex-1 flex flex-col md:flex-row">
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
           <ChatPane
             messages={messages}
             inputValue={inputValue}
@@ -593,6 +560,7 @@ export default function Dashboard() {
               onSelectSource={setSelectedSource}
               sources={sources}
               retrievedChunks={selectedSource ? [selectedSource] : []}
+              onOpenSummaryModal={() => setShowSummaryModal(true)}
             />
           )}
         </div>
@@ -609,6 +577,21 @@ export default function Dashboard() {
           setShowUploadModal(false);
         }}
       />
+      
+      <SummaryModal
+        isOpen={showSummaryModal}
+        onClose={() => setShowSummaryModal(false)}
+        sourceIds={selectedSourceIds}
+        token={getToken()}
+      />
     </div>
+  );
+}
+
+export default function Dashboard() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="text-xl font-semibold">Loading...</div></div>}>
+      <DashboardContent />
+    </Suspense>
   );
 }

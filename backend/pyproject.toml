@@ -19,6 +19,10 @@ pydantic-settings = "^2.1"          # Settings management with Pydantic
 python-dotenv = "^1.0"              # Load .env files
 aiosqlite = "^0.19"                 # Async SQLite for database operations
 
+# ORM & Migrations
+sqlalchemy = "^2.0"                 # SQLAlchemy ORM
+alembic = "^1.13"                   # Database migrations
+
 # Vector Database
 qdrant-client = "^1.7"                # Qdrant vector database client
 

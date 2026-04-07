@@ -35,7 +35,7 @@ export default function AdminPage() {
 
     const fetchStats = async () => {
       try {
-        const token = (session.user as any)?.accessToken;
+        const token = (session.user as { accessToken?: string })?.accessToken;
         const res = await fetch("http://localhost:8003/api/admin/follow-up-stats", {
           headers: {
             "Authorization": `Bearer ${token}`,

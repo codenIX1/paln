@@ -48,6 +48,12 @@ class Settings(BaseSettings):
         description="Model to use for video embeddings"
     )
 
+    # Vision Model (for true multimodal understanding)
+    ollama_vision_model: str = Field(
+        default="moondream",
+        description="Vision model for image understanding (moondream, llava, etc.)"
+    )
+
     # Whisper Model
     whisper_model: str = Field(
         default="tiny",
@@ -78,6 +84,12 @@ class Settings(BaseSettings):
     upload_dir: Path = Field(
         default=Path("./uploads"),
         description="Directory to store uploaded files"
+    )
+    
+    # Database
+    db_name: str = Field(
+        default="project_db",
+        description="SQLite database name"
     )
 
     # API

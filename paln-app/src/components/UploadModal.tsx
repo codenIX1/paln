@@ -2,6 +2,11 @@
 
 import { useState, useRef, useEffect } from "react";
 import { X, Upload, FileText, Link as LinkIcon, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from "@/components/ui/dialog";
 
 interface Source {
   id: string;
@@ -37,8 +42,6 @@ export function UploadModal({ isOpen, onClose, onUpload }: UploadModalProps) {
       document.body.style.overflow = "unset";
     };
   }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -116,160 +119,136 @@ export function UploadModal({ isOpen, onClose, onUpload }: UploadModalProps) {
     }, 800);
   };
 
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) onClose();
-  };
-
   const canSubmit = files.length > 0 || textContent.trim() || linkUrl.trim();
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-neo-black/50 backdrop-blur-sm"
-      onClick={handleOverlayClick}
-    >
-      <div className="w-full max-w-lg mx-4 bg-neo-white border-4 border-neo-black shadow-neo-hover">
-        <div className="flex items-center justify-between p-4 border-b-4 border-neo-black bg-neo-yellow">
-          <h2 className="text-xl font-black text-neo-black">UPLOAD SOURCES</h2>
-          <button
-            onClick={onClose}
-            className="p-1 border-2 border-neo-black bg-neo-white hover:bg-neo-pink hover:text-neo-white transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogHeader>
+        <DialogTitle>Upload Sources</DialogTitle>
+      </DialogHeader>
 
-        <div className="flex border-b-2 border-neo-black">
-          {(["file", "text", "link"] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex-1 py-3 font-bold text-sm border-r-2 border-neo-black last:border-r-0 transition-colors ${
-                activeTab === tab
-                  ? "bg-neo-black text-neo-white"
-                  : "bg-neo-white text-neo-black hover:bg-neo-yellow"
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "file" | "text" | "link")}>
+        <TabsList className="w-full">
+          <TabsTrigger value="file" className="flex-1">
+            <Upload className="w-4 h-4 mr-2" />
+            File
+          </TabsTrigger>
+          <TabsTrigger value="text" className="flex-1">
+            <FileText className="w-4 h-4 mr-2" />
+            Text
+          </TabsTrigger>
+          <TabsTrigger value="link" className="flex-1">
+            <LinkIcon className="w-4 h-4 mr-2" />
+            Link
+          </TabsTrigger>
+        </TabsList>
+
+        <DialogContent>
+          <TabsContent value="file">
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${
+                isDragging
+                  ? "bg-muted border-primary"
+                  : "hover:bg-muted/50"
               }`}
             >
-              {tab === "file" && <Upload className="w-4 h-4 inline mr-2" />}
-              {tab === "text" && <FileText className="w-4 h-4 inline mr-2" />}
-              {tab === "link" && <LinkIcon className="w-4 h-4 inline mr-2" />}
-              {tab.toUpperCase()}
-            </button>
-          ))}
-        </div>
-
-        <div className="p-6">
-          {activeTab === "file" && (
-            <div>
-              <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-3 border-dashed border-neo-black p-8 text-center cursor-pointer transition-all ${
-                  isDragging
-                    ? "bg-neo-yellow border-neo-black scale-[1.02]"
-                    : "bg-neo-white hover:bg-neo-yellow/50"
-                }`}
-              >
-                <Upload className="w-12 h-12 mx-auto mb-3 text-neo-black/50" />
-                <p className="font-black text-neo-black mb-1">
-                  DROP FILES HERE
-                </p>
-                <p className="text-xs font-medium text-neo-black/60">
-                  or click to browse
-                </p>
-                <p className="text-xs font-medium text-neo-black/40 mt-2">
-                  PDF, DOC, TXT, PNG, JPG, MP4, MOV
-                </p>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.gif,.mp4,.mov"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-              </div>
-
-              {files.length > 0 && (
-                <div className="mt-4 space-y-2 max-h-40 overflow-y-auto">
-                  {files.map((file, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between p-2 border-2 border-neo-black bg-neo-yellow"
-                    >
-                      <span className="text-sm font-bold truncate flex-1">
-                        {file.name}
-                      </span>
-                      <button
-                        onClick={() => removeFile(index)}
-                        className="p-1 hover:bg-neo-pink hover:text-neo-white transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <Upload className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
+              <p className="font-medium mb-1">
+                Drop files here
+              </p>
+              <p className="text-sm text-muted-foreground">
+                or click to browse
+              </p>
+              <p className="text-xs text-muted-foreground mt-2">
+                PDF, DOC, TXT, PNG, JPG, MP4, MOV
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.gif,.mp4,.mov"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
             </div>
-          )}
 
-          {activeTab === "text" && (
-            <div>
-              <label className="block text-sm font-bold text-neo-black mb-2">
-                PASTE YOUR TEXT
-              </label>
-              <textarea
+            {files.length > 0 && (
+              <div className="mt-4 space-y-2 max-h-40 overflow-y-auto">
+                {files.map((file, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between p-2 bg-muted rounded-md"
+                  >
+                    <span className="text-sm truncate flex-1">
+                      {file.name}
+                    </span>
+                    <Button
+                      onClick={() => removeFile(index)}
+                      variant="ghost"
+                      size="sm"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="text">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Paste your text</label>
+              <Textarea
                 value={textContent}
                 onChange={(e) => setTextContent(e.target.value)}
                 placeholder="Paste text content here..."
-                className="w-full h-48 p-3 border-2 border-neo-black text-sm font-medium focus:outline-none focus:ring-2 focus:ring-neo-pink resize-none"
+                className="h-48 resize-none"
               />
             </div>
-          )}
+          </TabsContent>
 
-          {activeTab === "link" && (
-            <div>
-              <label className="block text-sm font-bold text-neo-black mb-2">
-                ENTER URL
-              </label>
-              <input
+          <TabsContent value="link">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Enter URL</label>
+              <Input
                 type="url"
                 value={linkUrl}
                 onChange={(e) => setLinkUrl(e.target.value)}
                 placeholder="https://example.com"
-                className="w-full p-3 border-2 border-neo-black text-sm font-medium focus:outline-none focus:ring-2 focus:ring-neo-pink"
               />
-              <p className="text-xs font-medium text-neo-black/50 mt-2">
+              <p className="text-xs text-muted-foreground">
                 Supported: webpages, articles, documents
               </p>
             </div>
-          )}
-        </div>
+          </TabsContent>
+        </DialogContent>
+      </Tabs>
 
-        <div className="flex gap-3 p-4 border-t-4 border-neo-black bg-neo-white">
-          <button
-            onClick={onClose}
-            className="flex-1 py-3 border-2 border-neo-black bg-neo-white font-bold text-sm hover:bg-neo-black hover:text-neo-white transition-colors"
-          >
-            CANCEL
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!canSubmit || isUploading}
-            className="flex-1 py-3 bg-neo-yellow border-2 border-neo-black font-black text-sm shadow-neo hover:shadow-neo-hover hover:translate-x-0.5 hover:translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {isUploading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                UPLOADING...
-              </>
-            ) : (
-              <>START ANALYZING</>
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
+      <DialogFooter>
+        <Button
+          onClick={onClose}
+          variant="outline"
+        >
+          Cancel
+        </Button>
+        <Button
+          onClick={handleSubmit}
+          disabled={!canSubmit || isUploading}
+        >
+          {isUploading ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Uploading...
+            </>
+          ) : (
+            "Start Analyzing"
+          )}
+        </Button>
+      </DialogFooter>
+    </Dialog>
   );
 }
